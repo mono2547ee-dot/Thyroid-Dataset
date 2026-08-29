@@ -1,10 +1,9 @@
 # ===================================================================
-# Thyroid Disease Prediction - Beautiful Streamlit Web App
+# Thyroid Disease Prediction - Streamlit Web App (Cloud-Safe Version)
 # ===================================================================
 import streamlit as st
 import pandas as pd
 import numpy as np
-import joblib
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.model_selection import train_test_split, RandomizedSearchCV
@@ -13,9 +12,10 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, classification_report
 import os
 import warnings
+import time
 warnings.filterwarnings('ignore')
 
 # ===================================================================
@@ -165,29 +165,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ===================================================================
-# Load or Train Model
+# Load and Train Model (Always train on Cloud - No .pkl dependency)
 # ===================================================================
-@st.cache_resource
+@st.cache_resource(show_spinner="🔄 กำลังเตรียมโมเดล...")
 def load_or_train_model():
-    """โหลดโมเดลถ้ามี หรือ train ใหม่ถ้ายังไม่มี"""
-    model_path = 'svm_thyroid_model.pkl'
-    info_path = 'feature_info.pkl'
+    """Train โมเดลใหม่จาก CSV โดยตรง - ไม่พึ่งไฟล์ .pkl"""
+    
     data_path = 'Thyroid-Dataset.csv'
     
-    # ถ้ามีโมเดลอยู่แล้ว ให้โหลด
-    if os.path.exists(model_path) and os.path.exists(info_path):
-        st.sidebar.success("✅ โหลดโมเดลสำเร็จ")
-        model = joblib.load(model_path)
-        feature_info = joblib.load(info_path)
-        return model, feature_info
-    
-    # ถ้าไม่มี ให้ train ใหม่
-    st.sidebar.info("🔄 กำลัง train โมเดลใหม่...")
-    progress_bar = st.sidebar.progress(0)
+    # ตรวจสอบว่ามีไฟล์ CSV หรือไม่
+    if not os.path.exists(data_path):
+        st.error(f"❌ ไม่พบไฟล์ {data_path} กรุณาอัปโหลดไฟล์ CSV ขึ้น GitHub")
+        return None, None
     
     # โหลดข้อมูล
     df = pd.read_csv(data_path, header=None)
-    progress_bar.progress(10)
     
     column_names = [
         'age', 'sex', 'on_thyroxine', 'query_on_thyroxine', 
@@ -202,7 +194,6 @@ def load_or_train_model():
     
     df.columns = column_names
     df = df.replace('?', np.nan)
-    progress_bar.progress(20)
     
     # แปลงข้อมูล
     bool_cols = ['on_thyroxine', 'query_on_thyroxine', 'on_antithyroid_medication',
@@ -220,7 +211,6 @@ def load_or_train_model():
             df[col] = pd.to_numeric(df[col], errors='coerce')
     
     df['status'] = df['status'].astype(str)
-    progress_bar.progress(40)
     
     X = df.drop('status', axis=1)
     y = df['status']
@@ -228,7 +218,6 @@ def load_or_train_model():
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
     )
-    progress_bar.progress(50)
     
     # Preprocessing
     categorical_features = ['sex', 'referral_source'] + bool_cols
@@ -251,7 +240,6 @@ def load_or_train_model():
         ('num', numerical_transformer, numerical_features),
         ('cat', categorical_transformer, categorical_features)
     ])
-    progress_bar.progress(60)
     
     # Train SVM
     svm_pipeline = Pipeline(steps=[
@@ -277,12 +265,7 @@ def load_or_train_model():
     )
     
     random_search.fit(X_train, y_train)
-    progress_bar.progress(80)
-    
     best_model = random_search.best_estimator_
-    
-    # บันทึกโมเดล
-    joblib.dump(best_model, model_path)
     
     feature_info = {
         'numerical_features': numerical_features,
@@ -294,13 +277,10 @@ def load_or_train_model():
         'cv_score': float(random_search.best_score_),
         'accuracy': float(accuracy_score(y_test, best_model.predict(X_test)))
     }
-    joblib.dump(feature_info, info_path)
-    progress_bar.progress(100)
-    
-    st.sidebar.success("✅ Train โมเดลเสร็จสิ้น!")
     
     return best_model, feature_info
 
+# โหลดโมเดล
 model, feature_info = load_or_train_model()
 
 # ===================================================================
@@ -310,7 +290,7 @@ st.markdown("""
 <div class="main-header">
     <h1>🦋 ThyroidCare AI</h1>
     <p>Advanced Thyroid Disease Prediction System Using Machine Learning</p>
-    <p style="font-size: 0.9rem; margin-top: 1rem;"> Fast & Accurate • 🏥 Medical Grade • 🤖 SVM Powered</p>
+    <p style="font-size: 0.9rem; margin-top: 1rem;">⚡ Fast & Accurate • 🏥 Medical Grade •  SVM Powered</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -322,27 +302,28 @@ with st.sidebar:
     
     menu = st.radio(
         "Select Section",
-        ["🏠 Home", "🔮 Prediction", "📊 Analytics", "ℹ️ About"],
+        ["🏠 Home", " Prediction", "📊 Analytics", "️ About"],
         label_visibility="collapsed"
     )
     
     st.markdown("---")
     
     # Model Info Card
-    st.markdown("""
-    <div class="card">
-        <h4 style="color: #667eea; margin-bottom: 1rem;"> Model Information</h4>
-        <p><strong>Algorithm:</strong> SVM</p>
-        <p><strong>Kernel:</strong> RBF</p>
-        <p><strong>Accuracy:</strong> """ + f"{feature_info.get('accuracy', 95)*100:.1f}%" + """</p>
-        <p><strong>Classes:</strong> """ + str(len(feature_info['target_classes'])) + """ Types</p>
-    </div>
-    """, unsafe_allow_html=True)
+    if feature_info is not None:
+        st.markdown("""
+        <div class="card">
+            <h4 style="color: #667eea; margin-bottom: 1rem;">📊 Model Information</h4>
+            <p><strong>Algorithm:</strong> SVM</p>
+            <p><strong>Kernel:</strong> """ + str(feature_info['best_params'].get('classifier__kernel', 'RBF')) + """</p>
+            <p><strong>Accuracy:</strong> """ + f"{feature_info.get('accuracy', 0)*100:.1f}%" + """</p>
+            <p><strong>Classes:</strong> """ + str(len(feature_info['target_classes'])) + """ Types</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.markdown("---")
     
     # Quick Stats
-    st.markdown("### ⚡ Quick Stats")
+    st.markdown("###  Quick Stats")
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("""
@@ -362,6 +343,10 @@ with st.sidebar:
 # ===================================================================
 # Main Content
 # ===================================================================
+
+if model is None or feature_info is None:
+    st.error("❌ ไม่สามารถโหลดโมเดลได้ กรุณาตรวจสอบไฟล์ Thyroid-Dataset.csv")
+    st.stop()
 
 if menu == "🏠 Home":
     st.markdown("""
@@ -391,7 +376,7 @@ if menu == "🏠 Home":
         <div class="card">
             <div style="font-size: 3rem; text-align: center;">🎯</div>
             <h3 style="text-align: center; color: #667eea;">Accurate</h3>
-            <p style="text-align: center;">95%+ accuracy rate</p>
+            <p style="text-align: center;">""" + f"{feature_info.get('accuracy', 0)*100:.1f}%" + """ accuracy rate</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -405,13 +390,13 @@ if menu == "🏠 Home":
         """, unsafe_allow_html=True)
     
     # How It Works
-    st.markdown("##  How It Works")
+    st.markdown("## 🔧 How It Works")
     
     steps = [
         ("📝", "Input Patient Data", "Enter patient information and test results"),
         ("🤖", "AI Processing", "Our SVM model analyzes the data"),
         ("📊", "Get Results", "Receive detailed prediction with confidence scores"),
-        ("👨‍⚕️", "Consult Doctor", "Share results with healthcare provider")
+        ("‍⚕️", "Consult Doctor", "Share results with healthcare provider")
     ]
     
     for i, (icon, title, desc) in enumerate(steps, 1):
@@ -525,15 +510,7 @@ elif menu == "🔮 Prediction":
                                use_container_width=True)
     
     if predict_btn:
-        with st.spinner(" Analyzing patient data..."):
-            # Create progress bar
-            progress_bar = st.progress(0)
-            
-            for i in range(100):
-                import time
-                time.sleep(0.01)
-                progress_bar.progress(i + 1)
-            
+        with st.spinner("🤖 Analyzing patient data..."):
             # Prepare input data
             input_data = pd.DataFrame({
                 'age': [age],
@@ -563,8 +540,6 @@ elif menu == "🔮 Prediction":
             # Make prediction
             prediction = model.predict(input_data)[0]
             probabilities = model.predict_proba(input_data)[0]
-            
-            progress_bar.empty()
             
             # Display results
             st.markdown("## 🎯 Prediction Results")
@@ -611,7 +586,7 @@ elif menu == "🔮 Prediction":
             elif 'hypothyroid' in prediction.lower():
                 st.markdown(f"""
                 <div class="prediction-warning">
-                    <h2 style="margin: 0;">⚠️ Hypothyroid Condition Detected</h2>
+                    <h2 style="margin: 0;">️ Hypothyroid Condition Detected</h2>
                     <p style="margin: 0.5rem 0 0 0; font-size: 1.1rem;">
                         The patient shows signs of hypothyroidism. Medical consultation recommended.
                     </p>
@@ -682,7 +657,7 @@ elif menu == "🔮 Prediction":
                 """)
             elif 'hypothyroid' in prediction.lower():
                 st.warning("""
-                **️ Medical Attention Recommended**
+                **⚠️ Medical Attention Recommended**
                 - Consult an endocrinologist immediately
                 - May require thyroid hormone replacement therapy
                 - Regular monitoring of TSH levels needed
@@ -698,7 +673,7 @@ elif menu == "🔮 Prediction":
                 """)
             else:
                 st.info(f"""
-                **️ Further Evaluation Needed**
+                **ℹ️ Further Evaluation Needed**
                 - Consult with healthcare provider
                 - Additional tests may be required
                 - Monitor symptoms carefully
@@ -712,12 +687,12 @@ elif menu == "📊 Analytics":
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
             <div style="text-align: center;">
                 <div style="font-size: 2.5rem; color: #667eea;">🎯</div>
                 <h3 style="color: #667eea; margin: 0.5rem 0;">Accuracy</h3>
-                <p style="font-size: 2rem; font-weight: bold; margin: 0;">""" + f"{feature_info.get('accuracy', 0.95)*100:.1f}%" + """</p>
+                <p style="font-size: 2rem; font-weight: bold; margin: 0;">{feature_info.get('accuracy', 0)*100:.1f}%</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -748,7 +723,7 @@ elif menu == "📊 Analytics":
         st.markdown("""
         <div class="card">
             <div style="text-align: center;">
-                <div style="font-size: 2.5rem; color: #667eea;">🎲</div>
+                <div style="font-size: 2.5rem; color: #667eea;"></div>
                 <h3 style="color: #667eea; margin: 0.5rem 0;">F1-Score</h3>
                 <p style="font-size: 2rem; font-weight: bold; margin: 0;">94.1%</p>
             </div>
@@ -756,16 +731,16 @@ elif menu == "📊 Analytics":
         """, unsafe_allow_html=True)
     
     # Model information
-    st.markdown("###  Model Architecture")
+    st.markdown("### 🤖 Model Architecture")
     
-    st.markdown("""
+    st.markdown(f"""
     <div class="card">
         <h4 style="color: #667eea;">Algorithm Details</h4>
         <ul style="line-height: 2;">
             <li><strong>Model Type:</strong> Support Vector Machine (SVM)</li>
-            <li><strong>Kernel:</strong> Radial Basis Function (RBF)</li>
-            <li><strong>C Parameter:</strong> Optimized via Grid Search</li>
-            <li><strong>Gamma:</strong> Auto-scaled</li>
+            <li><strong>Kernel:</strong> {feature_info['best_params'].get('classifier__kernel', 'RBF')}</li>
+            <li><strong>C Parameter:</strong> {feature_info['best_params'].get('classifier__C', 'Optimized')}</li>
+            <li><strong>Gamma:</strong> {feature_info['best_params'].get('classifier__gamma', 'Auto-scaled')}</li>
             <li><strong>Cross-Validation:</strong> 3-Fold</li>
             <li><strong>Class Weight:</strong> Balanced</li>
         </ul>
@@ -773,7 +748,7 @@ elif menu == "📊 Analytics":
     """, unsafe_allow_html=True)
     
     # Features importance
-    st.markdown("###  Feature Categories")
+    st.markdown("### 📋 Feature Categories")
     
     col1, col2 = st.columns(2)
     
@@ -795,7 +770,7 @@ elif menu == "📊 Analytics":
     with col2:
         st.markdown(f"""
         <div class="card">
-            <h4 style="color: #667eea;">📋 Categorical Features ({len(feature_info['categorical_features'])})</h4>
+            <h4 style="color: #667eea;"> Categorical Features ({len(feature_info['categorical_features'])})</h4>
             <ul>
                 <li>Sex</li>
                 <li>Referral Source</li>
@@ -816,7 +791,7 @@ elif menu == "ℹ️ About":
     
     st.markdown("""
     <div class="card">
-        <h3 style="color: #667eea;">🎯 Our Mission</h3>
+        <h3 style="color: #667eea;"> Our Mission</h3>
         <p style="line-height: 1.8;">
             ThyroidCare AI is designed to assist healthcare professionals in early detection and 
             diagnosis of thyroid conditions. Our system leverages advanced machine learning 
