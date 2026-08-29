@@ -1,5 +1,5 @@
 # ===================================================================
-# Thyroid Disease Prediction - Streamlit Web App (Cloud-Safe Version)
+# Thyroid Disease Prediction - Streamlit Web App (FIXED VERSION)
 # ===================================================================
 import streamlit as st
 import pandas as pd
@@ -12,10 +12,9 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score
 import os
 import warnings
-import time
 warnings.filterwarnings('ignore')
 
 # ===================================================================
@@ -165,15 +164,14 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ===================================================================
-# Load and Train Model (Always train on Cloud - No .pkl dependency)
+# Load and Train Model (FIXED - No stratify issues)
 # ===================================================================
-@st.cache_resource(show_spinner="🔄 กำลังเตรียมโมเดล...")
+@st.cache_resource(show_spinner=" กำลังเตรียมโมเดล...")
 def load_or_train_model():
-    """Train โมเดลใหม่จาก CSV โดยตรง - ไม่พึ่งไฟล์ .pkl"""
+    """Train โมเดลใหม่จาก CSV โดยตรง - แก้ปัญหา stratify แล้ว"""
     
     data_path = 'Thyroid-Dataset.csv'
     
-    # ตรวจสอบว่ามีไฟล์ CSV หรือไม่
     if not os.path.exists(data_path):
         st.error(f"❌ ไม่พบไฟล์ {data_path} กรุณาอัปโหลดไฟล์ CSV ขึ้น GitHub")
         return None, None
@@ -212,12 +210,29 @@ def load_or_train_model():
     
     df['status'] = df['status'].astype(str)
     
+    # 🔧 FIX: กรองเฉพาะคลาสที่มีตัวอย่าง >= 5 ตัวอย่าง (เพื่อป้องกัน stratify error)
+    class_counts = df['status'].value_counts()
+    valid_classes = class_counts[class_counts >= 5].index.tolist()
+    removed_classes = class_counts[class_counts < 5].index.tolist()
+    
+    if removed_classes:
+        st.sidebar.warning(f"⚠️ ลบ {len(removed_classes)} คลาสที่ตัวอย่างน้อย: {removed_classes}")
+    
+    df = df[df['status'].isin(valid_classes)]
+    
     X = df.drop('status', axis=1)
     y = df['status']
     
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    # 🔧 FIX: ใช้ stratify เฉพาะเมื่อทุกคลาสมีตัวอย่างเพียงพอ
+    try:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42, stratify=y
+        )
+    except ValueError:
+        # ถ้า stratify ยังล้มเหลว ให้ split แบบไม่มี stratify
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
     
     # Preprocessing
     categorical_features = ['sex', 'referral_source'] + bool_cols
@@ -253,11 +268,12 @@ def load_or_train_model():
         'classifier__kernel': ['rbf', 'linear']
     }
     
+    # 🔧 FIX: ใช้ cv=2 แทน cv=3 เพื่อป้องกัน error จากคลาสน้อย
     random_search = RandomizedSearchCV(
         svm_pipeline,
         param_distributions,
         n_iter=10,
-        cv=3,
+        cv=2,  # ลดจาก 3 เป็น 2
         scoring='accuracy',
         n_jobs=-1,
         random_state=42,
@@ -275,7 +291,9 @@ def load_or_train_model():
         'feature_names': X.columns.tolist(),
         'best_params': random_search.best_params_,
         'cv_score': float(random_search.best_score_),
-        'accuracy': float(accuracy_score(y_test, best_model.predict(X_test)))
+        'accuracy': float(accuracy_score(y_test, best_model.predict(X_test))),
+        'removed_classes': removed_classes,
+        'valid_classes': valid_classes
     }
     
     return best_model, feature_info
@@ -290,7 +308,7 @@ st.markdown("""
 <div class="main-header">
     <h1>🦋 ThyroidCare AI</h1>
     <p>Advanced Thyroid Disease Prediction System Using Machine Learning</p>
-    <p style="font-size: 0.9rem; margin-top: 1rem;">⚡ Fast & Accurate • 🏥 Medical Grade •  SVM Powered</p>
+    <p style="font-size: 0.9rem; margin-top: 1rem;">⚡ Fast & Accurate • 🏥 Medical Grade • 🤖 SVM Powered</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -302,7 +320,7 @@ with st.sidebar:
     
     menu = st.radio(
         "Select Section",
-        ["🏠 Home", " Prediction", "📊 Analytics", "️ About"],
+        ["🏠 Home", "🔮 Prediction", "📊 Analytics", "ℹ️ About"],
         label_visibility="collapsed"
     )
     
@@ -310,25 +328,25 @@ with st.sidebar:
     
     # Model Info Card
     if feature_info is not None:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
             <h4 style="color: #667eea; margin-bottom: 1rem;">📊 Model Information</h4>
             <p><strong>Algorithm:</strong> SVM</p>
-            <p><strong>Kernel:</strong> """ + str(feature_info['best_params'].get('classifier__kernel', 'RBF')) + """</p>
-            <p><strong>Accuracy:</strong> """ + f"{feature_info.get('accuracy', 0)*100:.1f}%" + """</p>
-            <p><strong>Classes:</strong> """ + str(len(feature_info['target_classes'])) + """ Types</p>
+            <p><strong>Kernel:</strong> {feature_info['best_params'].get('classifier__kernel', 'RBF')}</p>
+            <p><strong>Accuracy:</strong> {feature_info.get('accuracy', 0)*100:.1f}%</p>
+            <p><strong>Classes:</strong> {len(feature_info['target_classes'])} Types</p>
         </div>
         """, unsafe_allow_html=True)
     
     st.markdown("---")
     
     # Quick Stats
-    st.markdown("###  Quick Stats")
+    st.markdown("### ⚡ Quick Stats")
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("""
+        st.markdown(f"""
         <div class="metric-card">
-            <div class="metric-value">9</div>
+            <div class="metric-value">{len(feature_info['target_classes']) if feature_info else 0}</div>
             <div class="metric-label">Classes</div>
         </div>
         """, unsafe_allow_html=True)
@@ -372,11 +390,11 @@ if menu == "🏠 Home":
         """, unsafe_allow_html=True)
     
     with col2:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
-            <div style="font-size: 3rem; text-align: center;">🎯</div>
+            <div style="font-size: 3rem; text-align: center;"></div>
             <h3 style="text-align: center; color: #667eea;">Accurate</h3>
-            <p style="text-align: center;">""" + f"{feature_info.get('accuracy', 0)*100:.1f}%" + """ accuracy rate</p>
+            <p style="text-align: center;">{feature_info.get('accuracy', 0)*100:.1f}% accuracy rate</p>
         </div>
         """, unsafe_allow_html=True)
     
@@ -396,7 +414,7 @@ if menu == "🏠 Home":
         ("📝", "Input Patient Data", "Enter patient information and test results"),
         ("🤖", "AI Processing", "Our SVM model analyzes the data"),
         ("📊", "Get Results", "Receive detailed prediction with confidence scores"),
-        ("‍⚕️", "Consult Doctor", "Share results with healthcare provider")
+        ("👨‍⚕️", "Consult Doctor", "Share results with healthcare provider")
     ]
     
     for i, (icon, title, desc) in enumerate(steps, 1):
@@ -505,7 +523,7 @@ elif menu == "🔮 Prediction":
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        predict_btn = st.button(" Predict Thyroid Condition", 
+        predict_btn = st.button("🔮 Predict Thyroid Condition", 
                                type="primary", 
                                use_container_width=True)
     
@@ -586,7 +604,7 @@ elif menu == "🔮 Prediction":
             elif 'hypothyroid' in prediction.lower():
                 st.markdown(f"""
                 <div class="prediction-warning">
-                    <h2 style="margin: 0;">️ Hypothyroid Condition Detected</h2>
+                    <h2 style="margin: 0;">⚠️ Hypothyroid Condition Detected</h2>
                     <p style="margin: 0.5rem 0 0 0; font-size: 1.1rem;">
                         The patient shows signs of hypothyroidism. Medical consultation recommended.
                     </p>
@@ -610,7 +628,7 @@ elif menu == "🔮 Prediction":
                 """, unsafe_allow_html=True)
             
             # Probability distribution chart
-            st.markdown("### 📊 Probability Distribution")
+            st.markdown("###  Probability Distribution")
             
             prob_df = pd.DataFrame({
                 'Class': feature_info['target_classes'],
@@ -619,7 +637,6 @@ elif menu == "🔮 Prediction":
             
             fig, ax = plt.subplots(figsize=(12, 6))
             
-            # Create gradient colors
             colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(prob_df)))
             
             bars = ax.barh(prob_df['Class'], prob_df['Probability'], color=colors)
@@ -628,7 +645,6 @@ elif menu == "🔮 Prediction":
             ax.set_xlim(0, 1)
             ax.grid(axis='x', alpha=0.3)
             
-            # Add value labels
             for i, (v, bar) in enumerate(zip(prob_df['Probability'], bars)):
                 ax.text(v + 0.01, bar.get_y() + bar.get_height()/2, 
                        f'{v*100:.1f}%', va='center', fontweight='bold')
@@ -637,7 +653,7 @@ elif menu == "🔮 Prediction":
             st.pyplot(fig)
             
             # Detailed probabilities table
-            st.markdown("###  Detailed Probabilities")
+            st.markdown("### 📋 Detailed Probabilities")
             
             prob_df_formatted = prob_df.copy()
             prob_df_formatted['Probability'] = prob_df_formatted['Probability'].apply(lambda x: f"{x*100:.2f}%")
@@ -665,7 +681,7 @@ elif menu == "🔮 Prediction":
                 """)
             elif 'hyperthyroid' in prediction.lower():
                 st.error("""
-                **🔥 Urgent Medical Attention Required**
+                ** Urgent Medical Attention Required**
                 - See a doctor immediately
                 - May require anti-thyroid medication
                 - Avoid iodine-rich foods
@@ -698,40 +714,40 @@ elif menu == "📊 Analytics":
         """, unsafe_allow_html=True)
     
     with col2:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
             <div style="text-align: center;">
-                <div style="font-size: 2.5rem; color: #667eea;">📊</div>
-                <h3 style="color: #667eea; margin: 0.5rem 0;">Precision</h3>
-                <p style="font-size: 2rem; font-weight: bold; margin: 0;">94.8%</p>
+                <div style="font-size: 2.5rem; color: #667eea;"></div>
+                <h3 style="color: #667eea; margin: 0.5rem 0;">CV Score</h3>
+                <p style="font-size: 2rem; font-weight: bold; margin: 0;">{feature_info.get('cv_score', 0)*100:.1f}%</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
     
     with col3:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
             <div style="text-align: center;">
-                <div style="font-size: 2.5rem; color: #667eea;">📈</div>
-                <h3 style="color: #667eea; margin: 0.5rem 0;">Recall</h3>
-                <p style="font-size: 2rem; font-weight: bold; margin: 0;">93.5%</p>
+                <div style="font-size: 2.5rem; color: #667eea;">️</div>
+                <h3 style="color: #667eea; margin: 0.5rem 0;">Classes</h3>
+                <p style="font-size: 2rem; font-weight: bold; margin: 0;">{len(feature_info['target_classes'])}</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
     
     with col4:
-        st.markdown("""
+        st.markdown(f"""
         <div class="card">
             <div style="text-align: center;">
-                <div style="font-size: 2.5rem; color: #667eea;"></div>
-                <h3 style="color: #667eea; margin: 0.5rem 0;">F1-Score</h3>
-                <p style="font-size: 2rem; font-weight: bold; margin: 0;">94.1%</p>
+                <div style="font-size: 2.5rem; color: #667eea;">⚙️</div>
+                <h3 style="color: #667eea; margin: 0.5rem 0;">Features</h3>
+                <p style="font-size: 2rem; font-weight: bold; margin: 0;">{len(feature_info['feature_names'])}</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
     
     # Model information
-    st.markdown("### 🤖 Model Architecture")
+    st.markdown("###  Model Architecture")
     
     st.markdown(f"""
     <div class="card">
@@ -741,14 +757,14 @@ elif menu == "📊 Analytics":
             <li><strong>Kernel:</strong> {feature_info['best_params'].get('classifier__kernel', 'RBF')}</li>
             <li><strong>C Parameter:</strong> {feature_info['best_params'].get('classifier__C', 'Optimized')}</li>
             <li><strong>Gamma:</strong> {feature_info['best_params'].get('classifier__gamma', 'Auto-scaled')}</li>
-            <li><strong>Cross-Validation:</strong> 3-Fold</li>
+            <li><strong>Cross-Validation:</strong> 2-Fold</li>
             <li><strong>Class Weight:</strong> Balanced</li>
         </ul>
     </div>
     """, unsafe_allow_html=True)
     
-    # Features importance
-    st.markdown("### 📋 Feature Categories")
+    # Features
+    st.markdown("###  Feature Categories")
     
     col1, col2 = st.columns(2)
     
@@ -770,7 +786,7 @@ elif menu == "📊 Analytics":
     with col2:
         st.markdown(f"""
         <div class="card">
-            <h4 style="color: #667eea;"> Categorical Features ({len(feature_info['categorical_features'])})</h4>
+            <h4 style="color: #667eea;">📋 Categorical Features ({len(feature_info['categorical_features'])})</h4>
             <ul>
                 <li>Sex</li>
                 <li>Referral Source</li>
@@ -785,6 +801,12 @@ elif menu == "📊 Analytics":
     st.markdown("### 🏷️ Classes ที่ทำนาย")
     for cls in feature_info['target_classes']:
         st.markdown(f"- {cls}")
+    
+    # แสดงคลาสที่ถูกลบออก
+    if feature_info.get('removed_classes'):
+        st.markdown("### ⚠️ Classes ที่ถูกลบ (ตัวอย่างน้อย)")
+        for cls in feature_info['removed_classes']:
+            st.markdown(f"- {cls}")
 
 elif menu == "ℹ️ About":
     st.markdown("## ℹ️ About ThyroidCare AI")
