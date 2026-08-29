@@ -18,27 +18,43 @@ warnings.filterwarnings('ignore')
 st.set_page_config(page_title="🦋 ThyroidCare AI", page_icon="🦋", layout="wide")
 
 # ===================================================================
-# Custom CSS (ทำให้เว็บสวยงาม)
+# Custom CSS (แก้ไขให้ตัวอักษรบนพื้นขาวเป็นสีดำชัดเจน)
 # ===================================================================
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
 * { font-family: 'Poppins', sans-serif; }
 .stApp { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); background-attachment: fixed; }
-.main-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 3rem; border-radius: 20px; text-align: center; color: white; margin-bottom: 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
-.main-header h1 { font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem; }
+
+/* --- พื้นหลังขาว/อ่อน -> บังคับตัวหนังสือสีดำ --- */
+.card, .card h1, .card h2, .card h3, .card h4, .card p, .card li, .card ul,
+.info-box, .info-box strong,
+.stMarkdown p, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3, .stMarkdown h4 {
+    color: #000000 !important;
+}
 .card { background: white; border-radius: 15px; padding: 2rem; margin: 1rem 0; box-shadow: 0 5px 20px rgba(0,0,0,0.1); }
-.metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 1.5rem; border-radius: 12px; text-align: center; }
-.metric-value { font-size: 2.5rem; font-weight: 700; margin: 0.5rem 0; }
-.prediction-success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); color: white; padding: 2rem; border-radius: 15px; text-align: center; }
-.prediction-warning { background: linear-gradient(135deg, #f12711 0%, #f5af19 100%); color: white; padding: 2rem; border-radius: 15px; text-align: center; }
 .info-box { background: #e3f2fd; border-left: 5px solid #2196f3; padding: 1rem; border-radius: 8px; margin: 1rem 0; }
-.footer { text-align: center; padding: 2rem; color: white; margin-top: 3rem; opacity: 0.8; }
+
+/* --- พื้นหลังสี/Gradient -> บังคับตัวหนังสือสีขาว --- */
+.main-header, .main-header h1, .main-header p,
+.metric-card, .metric-card .metric-label, .metric-card .metric-value,
+.prediction-success, .prediction-success h2, .prediction-success p,
+.prediction-warning, .prediction-warning h2, .prediction-warning p,
+.footer, .footer p {
+    color: #ffffff !important;
+}
+.main-header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 3rem; border-radius: 20px; text-align: center; margin-bottom: 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.2); }
+.main-header h1 { font-size: 3rem; font-weight: 700; margin-bottom: 0.5rem; }
+.metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 12px; text-align: center; }
+.metric-value { font-size: 2.5rem; font-weight: 700; margin: 0.5rem 0; }
+.prediction-success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); padding: 2rem; border-radius: 15px; text-align: center; }
+.prediction-warning { background: linear-gradient(135deg, #f12711 0%, #f5af19 100%); padding: 2rem; border-radius: 15px; text-align: center; }
+.footer { text-align: center; padding: 2rem; margin-top: 3rem; opacity: 0.8; }
 </style>
 """, unsafe_allow_html=True)
 
 # ===================================================================
-# Smart Load or Train Function (หัวใจสำคัญที่แก้ปัญหา Version Mismatch)
+# Smart Load or Train Function (แก้ปัญหา Version Mismatch ถาวร)
 # ===================================================================
 @st.cache_resource
 def get_model():
@@ -52,8 +68,8 @@ def get_model():
             model = joblib.load(model_path)
             info = joblib.load(info_path)
             return model, info
-        except Exception as e:
-            st.warning("⚠️ ตรวจพบโมเดลเก่าที่เข้ากันไม่ได้ (Version Mismatch) กำลังเทรนโมเดลใหม่ให้เหมาะสมกับระบบ...")
+        except Exception:
+            st.warning("⚠️ ตรวจพบโมเดลเก่าที่เข้ากันไม่ได้ กำลังเทรนโมเดลใหม่ให้เหมาะสมกับระบบ...")
             # ถ้า Error ให้ลบไฟล์เก่าทิ้งเพื่อป้องกันปัญหาซ้ำ
             if os.path.exists(model_path): os.remove(model_path)
             if os.path.exists(info_path): os.remove(info_path)
@@ -174,7 +190,7 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
 # ===================================================================
-# Main Content (ย่อส่วน Prediction เพื่อความกระชับ)
+# Main Content
 # ===================================================================
 if menu == "🏠 Home":
     st.markdown("""<div class="card"><h2 style="color: #667eea;">👋 Welcome to ThyroidCare AI</h2><p>ระบบทำนายโรคไทรอยด์ด้วย AI ที่แม่นยำและรวดเร็ว เพียงกรอกข้อมูลผู้ป่วย ระบบจะวิเคราะห์และให้ผลลัพธ์ทันที</p></div>""", unsafe_allow_html=True)
